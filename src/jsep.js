@@ -263,7 +263,18 @@
 						return gobbleStringLiteral();
 					} else if(isIdentifierStart(ch) || ch === OPAREN_CODE) { // open parenthesis
 						// `foo`, `bar.baz`
-						return gobbleVariable();
+						var kvExp;
+						var node = gobbleVariable();
+						while (node && node.type === KEYVALUE) {
+							kvExp = kvExp || { type: KEYVALUE_EXP, keys: {} };
+							kvExp.keys[node.key] = node.value;
+							gobbleSpaces();
+							if (exprICode(index) === COMMA_CODE) index++;
+							gobbleSpaces();
+							if (!isIdentifierStart(exprICode(index))) break;
+							node = gobbleVariable();
+						}
+						return kvExp || node;
 					} else if (ch === OBRACK_CODE) {
 						return gobbleArray();
 					} else {
@@ -388,6 +399,11 @@
 						ch = exprICode(index);
 						if(isIdentifierPart(ch)) {
 							index++;
+						} else if (ch === EQUALS_CODE) {
+							identifier = expr.slice(start, index++);
+							var kvExp = { type: KEYVALUE_EXP, keys: {} };
+							var value = gobbleExpression();
+							return { type: KEYVALUE, key: identifier, value: value };
 						} else {
 							break;
 						}
@@ -416,10 +432,10 @@
 				// until the terminator character `)` or `]` is encountered.
 				// e.g. `foo(bar, baz)`, `my_func()`, or `[bar, baz]`
 				gobbleArguments = function(termination) {
-					var ch_i, args = [], node, obj = { type: KEYVALUE_EXP, keys: {} };
+					var ch_i, args = [], node;
 					while(index < length) {
 						gobbleSpaces();
-						var start = index
+						var start = index;
 						ch_i = exprICode(index);
 						if(ch_i === termination) { // done parsing
 							index++;
@@ -428,43 +444,13 @@
 							index++;
 						} else {
 							node = gobbleExpression();
-							gobbleSpaces()
-							if (node.type === IDENTIFIER && exprICode(index) === EQUALS_CODE) {
-								index++;
-								node = { type: KEYVALUE, key: node, value: gobbleExpression() }
-								obj.keys[node.key.name] = node.value;
-							} else {
-								args.push(node);
-							}
 							if(!node || node.type === COMPOUND) {
 								throwError('Expected comma', index);
 							}
+							args.push(node);
 						}
 					}
-					if (Object.keys(obj.keys).length) {
-						args.forEach((a, i) => obj.keys[i] = a);
-						return [ obj ];
-					} else {
-						return args;
-					}
-				},
-
-				gobbleKeyValue = function() {
-					var ch_i, node, key = '', parsing_key = true, value;
-					while (index < length) {
-						gobbleSpaces()
-						ch_i = exprICode(index);
-						if (ch_i === EQUALS_CODE) {
-							index++;
-							parsing_key = false;
-						} else if (parsing_key) {
-							key = gobbleIdentifier();
-						} else {
-							value = gobbleExpression();
-							break;
-						}
-					}
-					return { type: KEYVALUE, key: key, value: value }
+					return args;
 				},
 
 				// Gobble a non-literal variable name. This variable name may include properties

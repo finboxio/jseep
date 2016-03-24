@@ -138,4 +138,59 @@ test('Ternary', function() {
 	equal(val.type, 'ConditionalExpression');
 });
 
+test('Named Arguments', function() {
+	var val = jsep('named(arg1="hi", arg2="bye")');
+	equal(val.type, 'CallExpression');
+	equal(val.callee.type, 'Identifier');
+	equal(val.callee.name, 'named');
+	equal(val.arguments[0].type, 'KeyValueExpression');
+	equal(val.arguments[0].keys.arg1.type, 'Literal');
+	equal(val.arguments[0].keys.arg1.raw, '"hi"');
+	equal(val.arguments[0].keys.arg1.value, 'hi');
+	equal(val.arguments[0].keys.arg2.type, 'Literal');
+	equal(val.arguments[0].keys.arg2.raw, '"bye"');
+	equal(val.arguments[0].keys.arg2.value, 'bye');
+
+	var val = jsep('named(arg1="hi" arg2="bye")');
+	equal(val.type, 'CallExpression');
+	equal(val.callee.type, 'Identifier');
+	equal(val.callee.name, 'named');
+	equal(val.arguments[0].type, 'KeyValueExpression');
+	equal(val.arguments[0].keys.arg1.type, 'Literal');
+	equal(val.arguments[0].keys.arg1.raw, '"hi"');
+	equal(val.arguments[0].keys.arg1.value, 'hi');
+	equal(val.arguments[0].keys.arg2.type, 'Literal');
+	equal(val.arguments[0].keys.arg2.raw, '"bye"');
+	equal(val.arguments[0].keys.arg2.value, 'bye');
+});
+
+test('Key-Value Expressions', function() {
+	var val = jsep('named[arg1="hi", arg2="bye"]');
+	equal(val.type, 'MemberExpression')
+	equal(val.computed, true)
+	equal(val.object.name, 'named')
+	equal(val.property.type, 'KeyValueExpression')
+	equal(val.property.keys.arg1.type, 'Literal');
+	equal(val.property.keys.arg1.raw, '"hi"');
+	equal(val.property.keys.arg1.value, 'hi');
+	equal(val.property.keys.arg2.type, 'Literal');
+	equal(val.property.keys.arg2.raw, '"bye"');
+	equal(val.property.keys.arg2.value, 'bye');
+
+	val = jsep('named[arg1="hi" arg2="bye" , arg3=4]');
+	equal(val.type, 'MemberExpression')
+	equal(val.computed, true)
+	equal(val.object.name, 'named')
+	equal(val.property.type, 'KeyValueExpression')
+	equal(val.property.keys.arg1.type, 'Literal');
+	equal(val.property.keys.arg1.raw, '"hi"');
+	equal(val.property.keys.arg1.value, 'hi');
+	equal(val.property.keys.arg2.type, 'Literal');
+	equal(val.property.keys.arg2.raw, '"bye"');
+	equal(val.property.keys.arg2.value, 'bye');
+	equal(val.property.keys.arg3.type, 'Literal');
+	equal(val.property.keys.arg3.raw, '4');
+	equal(val.property.keys.arg3.value, 4);
+});
+
 }());

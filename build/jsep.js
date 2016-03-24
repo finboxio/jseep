@@ -1,4 +1,4 @@
-//     JavaScript Expression Parser (JSEP) 0.3.0
+//     JavaScript Expression Parser (JSEP) 0.3.1
 //     JSEP may be freely distributed under the MIT License
 //     http://jsep.from.so/
 
@@ -7,10 +7,11 @@
 	'use strict';
 	// Node Types
 	// ----------
-	
+
 	// This is the full set of types that any JSEP node can be.
 	// Store them here to save space when minified
 	var COMPOUND = 'Compound',
+		KEYVALUE = 'KeyValue',
 		IDENTIFIER = 'Identifier',
 		MEMBER_EXP = 'MemberExpression',
 		LITERAL = 'Literal',
@@ -21,6 +22,7 @@
 		LOGICAL_EXP = 'LogicalExpression',
 		CONDITIONAL_EXP = 'ConditionalExpression',
 		ARRAY_EXP = 'ArrayExpression',
+		KEYVALUE_EXP = 'KeyValueExpression',
 
 		PERIOD_CODE = 46, // '.'
 		COMMA_CODE  = 44, // ','
@@ -28,6 +30,7 @@
 		DQUOTE_CODE = 34, // double quotes
 		OPAREN_CODE = 40, // (
 		CPAREN_CODE = 41, // )
+		EQUALS_CODE = 61, // =
 		OBRACK_CODE = 91, // [
 		CBRACK_CODE = 93, // ]
 		QUMARK_CODE = 63, // ?
@@ -43,7 +46,7 @@
 
 	// Operations
 	// ----------
-	
+
 	// Set `t` to `true` to save space (when minified, not gzipped)
 		t = true,
 	// Use a quickly-accessible map to store all of the unary operators
@@ -55,7 +58,7 @@
 		binary_ops = {
 			'||': 1, '&&': 2, '|': 3,  '^': 4,  '&': 5,
 			'==': 6, '!=': 6, '===': 6, '!==': 6,
-			'<': 7,  '>': 7,  '<=': 7,  '>=': 7, 
+			'<': 7,  '>': 7,  '<=': 7,  '>=': 7,
 			'<<':8,  '>>': 8, '>>>': 8,
 			'+': 9, '-': 9,
 			'*': 10, '/': 10, '%': 10
@@ -134,7 +137,7 @@
 						ch = exprICode(++index);
 					}
 				},
-				
+
 				// The main parsing function. Much of this code is dedicated to ternary expressions
 				gobbleExpression = function() {
 					var test = gobbleBinaryExpression(),
@@ -238,7 +241,7 @@
 					i = stack.length - 1;
 					node = stack[i];
 					while(i > 1) {
-						node = createBinaryExpression(stack[i - 1].value, stack[i - 2], node); 
+						node = createBinaryExpression(stack[i - 1].value, stack[i - 2], node);
 						i -= 2;
 					}
 					return node;
@@ -248,7 +251,7 @@
 				// e.g. `foo.bar(baz)`, `1`, `"abc"`, `(a % 2)` (because it's in parenthesis)
 				gobbleToken = function() {
 					var ch, to_check, tc_len;
-					
+
 					gobbleSpaces();
 					ch = exprICode(index);
 
@@ -260,7 +263,18 @@
 						return gobbleStringLiteral();
 					} else if(isIdentifierStart(ch) || ch === OPAREN_CODE) { // open parenthesis
 						// `foo`, `bar.baz`
-						return gobbleVariable();
+						var kvExp;
+						var node = gobbleVariable();
+						while (node && node.type === KEYVALUE) {
+							kvExp = kvExp || { type: KEYVALUE_EXP, keys: {} };
+							kvExp.keys[node.key] = node.value;
+							gobbleSpaces();
+							if (exprICode(index) === COMMA_CODE) index++;
+							gobbleSpaces();
+							if (!isIdentifierStart(exprICode(index))) break;
+							node = gobbleVariable();
+						}
+						return kvExp || node;
 					} else if (ch === OBRACK_CODE) {
 						return gobbleArray();
 					} else {
@@ -278,7 +292,7 @@
 							}
 							to_check = to_check.substr(0, --tc_len);
 						}
-						
+
 						return false;
 					}
 				},
@@ -297,7 +311,7 @@
 							number += exprI(index++);
 						}
 					}
-					
+
 					ch = exprI(index);
 					if(ch === 'e' || ch === 'E') { // exponent marker
 						number += exprI(index++);
@@ -312,7 +326,7 @@
 							throwError('Expected exponent (' + number + exprI(index) + ')', index);
 						}
 					}
-					
+
 
 					chCode = exprICode(index);
 					// Check to make sure this isn't a variable name that start with a number (123abc)
@@ -350,6 +364,7 @@
 								case 'b': str += '\b'; break;
 								case 'f': str += '\f'; break;
 								case 'v': str += '\x0B'; break;
+								case '\\': str += '\\'; break;
 							}
 						} else {
 							str += ch;
@@ -366,7 +381,7 @@
 						raw: quote + str + quote
 					};
 				},
-				
+
 				// Gobbles only identifiers
 				// e.g.: `foo`, `_value`, `$x1`
 				// Also, this function checks if that identifier is a literal:
@@ -384,6 +399,11 @@
 						ch = exprICode(index);
 						if(isIdentifierPart(ch)) {
 							index++;
+						} else if (ch === EQUALS_CODE) {
+							identifier = expr.slice(start, index++);
+							var kvExp = { type: KEYVALUE_EXP, keys: {} };
+							var value = gobbleExpression();
+							return { type: KEYVALUE, key: identifier, value: value };
 						} else {
 							break;
 						}
@@ -415,6 +435,7 @@
 					var ch_i, args = [], node;
 					while(index < length) {
 						gobbleSpaces();
+						var start = index;
 						ch_i = exprICode(index);
 						if(ch_i === termination) { // done parsing
 							index++;
@@ -439,7 +460,7 @@
 				gobbleVariable = function() {
 					var ch_i, node;
 					ch_i = exprICode(index);
-						
+
 					if(ch_i === OPAREN_CODE) {
 						node = gobbleGroup();
 					} else {
@@ -513,7 +534,7 @@
 				},
 
 				nodes = [], ch_i, node;
-				
+
 			while(index < length) {
 				ch_i = exprICode(index);
 
@@ -545,7 +566,7 @@
 		};
 
 	// To be filled in by the template
-	jsep.version = '0.3.0';
+	jsep.version = '0.3.1';
 	jsep.toString = function() { return 'JavaScript Expression Parser (JSEP) v' + jsep.version; };
 
 	/**
