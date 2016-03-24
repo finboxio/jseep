@@ -63,6 +63,8 @@
 			'+': 9, '-': 9,
 			'*': 10, '/': 10, '%': 10
 		},
+		identifier_chars = [],
+
 	// Get return the longest key length of any object
 		getMaxKeyLen = function(obj) {
 			var max_len = 0, len;
@@ -107,13 +109,15 @@
 		isIdentifierStart = function(ch) {
 			return (ch === 36) || (ch === 95) || // `$` and `_`
 					(ch >= 65 && ch <= 90) || // A...Z
-					(ch >= 97 && ch <= 122); // a...z
+					(ch >= 97 && ch <= 122) || // a...z
+					(identifier_chars[ch]);
 		},
 		isIdentifierPart = function(ch) {
 			return (ch === 36) || (ch === 95) || // `$` and `_`
 					(ch >= 65 && ch <= 90) || // A...Z
 					(ch >= 97 && ch <= 122) || // a...z
-					(ch >= 48 && ch <= 57); // 0...9
+					(ch >= 48 && ch <= 57) || // 0...9
+					(identifier_chars[ch]);
 		},
 
 		// Parsing
@@ -128,6 +132,7 @@
 				exprI = function(i) { return charAtFunc.call(expr, i); },
 				exprICode = function(i) { return charCodeAtFunc.call(expr, i); },
 				length = expr.length,
+				in_ternary = false,
 
 				// Push `index` up to the next non-space character
 				gobbleSpaces = function() {
@@ -145,6 +150,7 @@
 					gobbleSpaces();
 					if(exprICode(index) === QUMARK_CODE) {
 						// Ternary expression: test ? consequent : alternate
+						in_ternary = true;
 						index++;
 						consequent = gobbleExpression();
 						if(!consequent) {
@@ -157,6 +163,7 @@
 							if(!alternate) {
 								throwError('Expected expression', index);
 							}
+							in_ternary = undefined;
 							return {
 								type: CONDITIONAL_EXP,
 								test: test,
@@ -191,16 +198,28 @@
 				// This function is responsible for gobbling an individual expression,
 				// e.g. `1`, `1+2`, `a+(b*2)-Math.sqrt(2)`
 				gobbleBinaryExpression = function() {
-					var ch_i, node, biop, prec, stack, biop_info, left, right, i;
+					var ch_i, node, biop, prec, stack, biop_info, left, right, i, left_isolated;
 
 					// First, try to get the leftmost thing
 					// Then, check to see if there's a binary operator operating on that leftmost thing
 					left = gobbleToken();
+					left_isolated = exprICode(index - 1) === 32 || exprICode(index - 1) === 9;
 					biop = gobbleBinaryOp();
 
 					// If there wasn't a binary operator, just return the leftmost node
-					if(!biop) {
+					if (!biop && left.type === IDENTIFIER && ~left.name.lastIndexOf('?') && !~left.name.substring(left.name.lastIndexOf('?'), left.name.length - 1).indexOf(':')) {
+						if (left.name.charCodeAt(left.name.length - 1) === COLON_CODE) {
+							var start = index;
+							var alternate = gobbleExpression();
+							index = start;
+							if (!alternate) return left;
+						}
+						while (exprICode(--index) !== QUMARK_CODE) {}
+						return { type: IDENTIFIER, name: left.name.substring(0, left.name.lastIndexOf('?')) };
+					} else if (!biop) {
 						return left;
+					} else if (left.type === IDENTIFIER && isIdentifierPart(biop.charCodeAt(0)) && isIdentifierPart(exprICode(index))) {
+						if (!left_isolated) { return { type: IDENTIFIER, name: left.name + biop + gobbleIdentifier().name }; }
 					}
 
 					// Otherwise, we need to start a stack to properly place the binary operations in their
@@ -250,31 +269,26 @@
 				// An individual part of a binary expression:
 				// e.g. `foo.bar(baz)`, `1`, `"abc"`, `(a % 2)` (because it's in parenthesis)
 				gobbleToken = function() {
-					var ch, to_check, tc_len;
+					var ch, to_check, tc_len, node, kvExp;
 
 					gobbleSpaces();
 					ch = exprICode(index);
 
 					if(isDecimalDigit(ch) || ch === PERIOD_CODE) {
+						var start = index;
 						// Char code 46 is a dot `.` which can start off a numeric literal
-						return gobbleNumericLiteral();
+						try {
+							return gobbleNumericLiteral();
+						} catch (e) {
+							index = start;
+							node = gobbleVariable();
+						}
 					} else if(ch === SQUOTE_CODE || ch === DQUOTE_CODE) {
 						// Single or double quotes
 						return gobbleStringLiteral();
 					} else if(isIdentifierStart(ch) || ch === OPAREN_CODE) { // open parenthesis
 						// `foo`, `bar.baz`
-						var kvExp;
-						var node = gobbleVariable();
-						while (node && node.type === KEYVALUE) {
-							kvExp = kvExp || { type: KEYVALUE_EXP, keys: {} };
-							kvExp.keys[node.key] = node.value;
-							gobbleSpaces();
-							if (exprICode(index) === COMMA_CODE) index++;
-							gobbleSpaces();
-							if (!isIdentifierStart(exprICode(index))) break;
-							node = gobbleVariable();
-						}
-						return kvExp || node;
+						node = gobbleVariable();
 					} else if (ch === OBRACK_CODE) {
 						return gobbleArray();
 					} else {
@@ -295,11 +309,36 @@
 
 						return false;
 					}
+
+					if (node && node.type === IDENTIFIER && unary_ops.hasOwnProperty(node.name)) {
+						return {
+							type: UNARY_EXP,
+							operator: node.name,
+							argument: gobbleToken(),
+							prefix: true
+						};
+					} else if (node && node.type === IDENTIFIER && (+node.name || +node.name === 0)) {
+						return {
+							type: LITERAL,
+							value: parseFloat(node.name),
+							raw: node.name
+						};
+					}
+					while (node && node.type === KEYVALUE) {
+						kvExp = kvExp || { type: KEYVALUE_EXP, keys: {} };
+						kvExp.keys[node.key] = node.value;
+						gobbleSpaces();
+						if (exprICode(index) === COMMA_CODE) index++;
+						gobbleSpaces();
+						if (!isIdentifierStart(exprICode(index))) break;
+						node = gobbleVariable();
+					}
+					return kvExp || node;
 				},
 				// Parse simple numeric literals: `12`, `3.4`, `.5`. Do this by using a string to
 				// keep track of everything in the numeric literal and then calling `parseFloat` on that string
 				gobbleNumericLiteral = function() {
-					var number = '', ch, chCode;
+					var number = '', ch, chCode, i, rest, start;
 					while(isDecimalDigit(exprICode(index))) {
 						number += exprI(index++);
 					}
@@ -323,16 +362,42 @@
 							number += exprI(index++);
 						}
 						if(!isDecimalDigit(exprICode(index-1)) ) {
-							throwError('Expected exponent (' + number + exprI(index) + ')', index);
+							for (i = 0; i < number.length; i++) {
+								if (!isIdentifierPart(number.charCodeAt(i))) {
+									throwError('Expected exponent (' + number + exprI(index) + ')', index);
+								}
+							}
+							rest = gobbleIdentifier();
+							return {
+								type: IDENTIFIER,
+								name: number + rest.name
+							};
 						}
 					}
 
+					if (exprICode(index) === COLON_CODE && in_ternary) {
+						return {
+							type: LITERAL,
+							value: parseFloat(number),
+							raw: number
+						};
+					}
 
 					chCode = exprICode(index);
 					// Check to make sure this isn't a variable name that start with a number (123abc)
 					if(isIdentifierStart(chCode)) {
-						throwError('Variable names cannot start with a number (' +
+
+						for (i = 0; i < number.length; i++) {
+							if (!isIdentifierPart(number.charCodeAt(i))) {
+								throwError('Variable names cannot start with a number (' +
 									number + exprI(index) + ')', index);
+							}
+						}
+						rest = gobbleIdentifier();
+						return {
+							type: IDENTIFIER,
+							name: number + rest.name
+						};
 					} else if(chCode === PERIOD_CODE) {
 						throwError('Unexpected period', index);
 					}
@@ -591,6 +656,19 @@
 	};
 
 	/**
+	 * @method jsep.addIdentifierChars
+	 * @param {string} chars Characters to
+	 * @param {number} precedence The precedence of the binary op (can be a float)
+	 * @return jsep
+	 */
+	jsep.addIdentifierChars = function(chars) {
+		for (var i = 0; i < chars.length; i++) {
+			identifier_chars[chars.charCodeAt(i)] = 1;
+		}
+		return this;
+	};
+
+	/**
 	 * @method jsep.removeUnaryOp
 	 * @param {string} op_name The name of the unary op to remove
 	 * @return jsep
@@ -612,6 +690,18 @@
 		delete binary_ops[op_name];
 		if(op_name.length === max_binop_len) {
 			max_binop_len = getMaxKeyLen(binary_ops);
+		}
+		return this;
+	};
+
+	/**
+	 * @method jsep.removeIdentifierChars
+	 * @param {string} chars Characters to disallow in identifier names
+	 * @return jsep
+	 */
+	jsep.removeIdentifierChars = function(chars) {
+		for (var i = 0; i < chars.length; i++) {
+			identifier_chars[chars.charCodeAt(i)] = 0;
 		}
 		return this;
 	};
