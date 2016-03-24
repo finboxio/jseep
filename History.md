@@ -1,4 +1,9 @@
 
+0.5.0 / 2016-03-24
+==================
+
+  * add support for custom identifier allowed characters
+
 0.4.0 / 2016-03-24
 ==================
 
