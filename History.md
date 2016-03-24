@@ -1,4 +1,10 @@
 
+0.4.0 / 2016-03-24
+==================
+
+  * support key-value syntax in arrays
+  * rename to jseep
+
 0.3.1 / 2016-03-16
 ==================
 

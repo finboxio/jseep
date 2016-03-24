@@ -567,7 +567,7 @@
 
 	// To be filled in by the template
 	jsep.version = '<%= version %>';
-	jsep.toString = function() { return 'JavaScript Expression Parser (JSEP) v' + jsep.version; };
+	jsep.toString = function() { return 'JavaScript (Extended) Expression Parser (JSEP) v' + jsep.version; };
 
 	/**
 	 * @method jsep.addUnaryOp
