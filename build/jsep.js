@@ -1,4 +1,4 @@
-//     JavaScript Expression Parser (JSEP) 0.4.0
+//     JavaScript Expression Parser (JSEP) 0.5.0
 //     JSEP may be freely distributed under the MIT License
 //     http://jsep.from.so/
 
@@ -326,7 +326,9 @@
 					}
 					while (node && node.type === KEYVALUE) {
 						kvExp = kvExp || { type: KEYVALUE_EXP, keys: {} };
-						kvExp.keys[node.key] = node.value;
+						if (Array.isArray(kvExp.keys[node.key])) kvExp.keys[node.key].push(node.value);
+						else if (kvExp.keys[node.key] !== undefined) kvExp.keys[node.key] = [ kvExp.keys[node.key], node.value ];
+						else kvExp.keys[node.key] = node.value;
 						gobbleSpaces();
 						if (exprICode(index) === COMMA_CODE) index++;
 						gobbleSpaces();
@@ -466,7 +468,6 @@
 							index++;
 						} else if (ch === EQUALS_CODE) {
 							identifier = expr.slice(start, index++);
-							var kvExp = { type: KEYVALUE_EXP, keys: {} };
 							var value = gobbleExpression();
 							return { type: KEYVALUE, key: identifier, value: value };
 						} else {
@@ -631,7 +632,7 @@
 		};
 
 	// To be filled in by the template
-	jsep.version = '0.4.0';
+	jsep.version = '0.5.0';
 	jsep.toString = function() { return 'JavaScript (Extended) Expression Parser (JSEP) v' + jsep.version; };
 
 	/**
