@@ -340,6 +340,22 @@ test('Special Identifiers', function() {
 	equal(val.value, 11);
 
 	jsep.removeIdentifierChars('1+%@?:');
+
+	val = jsep('Group!prop');
+	equal(val.type, 'Identifier')
+	equal(val.name, 'Group!prop')
+	equal(val.object.type, 'Identifier')
+	equal(val.object.name, 'Group')
+	equal(val.property.type, 'Identifier')
+	equal(val.property.name, 'prop')
+
+	val = jsep("'Group 1'!prop");
+	equal(val.type, 'Identifier')
+	equal(val.name, "'Group 1'!prop")
+	equal(val.object.type, 'Identifier')
+	equal(val.object.name, "Group 1")
+	equal(val.property.type, 'Identifier')
+	equal(val.property.name, 'prop')
 });
 
 }());
