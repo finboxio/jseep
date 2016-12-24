@@ -1,4 +1,7 @@
-(function() {
+var esprima = require('./esprima')
+var jsep = require('..')()
+var test = require('ava').test
+
 var binops = {
 	"+" : function(a, b) { return a + b; },
 	"-" : function(a, b) { return a - b; },
@@ -6,6 +9,7 @@ var binops = {
 	"/" : function(a, b) { return a / b; },
 	"%" : function(a, b) { return a % b; }
 };
+
 var unops = {
 	"-" : function(a) { return -a; },
 	"+" : function(a) { return -a; }
@@ -21,8 +25,8 @@ var do_eval = function(node) {
 	}
 };
 
-var test_op_expession = function(str) {
-	equal(do_eval(jsep(str)), eval(str));
+var test_op_expession = function(t, str) {
+	t.is(do_eval(jsep(str)), eval(str));
 };
 
 var filter_props = function(larger, smaller) {
@@ -40,77 +44,78 @@ var filter_props = function(larger, smaller) {
 };
 
 var parse = jsep;
-var test_parser = function(inp, out) {
+var test_parser = function(t, inp, out) {
 	var parse_val = parse(inp);
-	return deepEqual(filter_props(parse_val, out), out);
-};
-var esprima_comparison_test = function(str) {
-	var jsep_val = jsep(str),
-		esprima_val = esprima.parse(str);
-	return deepEqual(jsep_val, esprima_val.body[0].expression);
+	return t.deepEqual(filter_props(parse_val, out), out);
 };
 
-module("Expression Parser");
+var esprima_comparison_test = function(t) {
+	return function(str) {
+		var jsep_val = jsep(str),
+			esprima_val = esprima.parse(str);
+		return t.deepEqual(jsep_val, esprima_val.body[0].expression);
+	}
+};
 
-test('Constants', function() {
-	test_parser("'abc'", {value: "abc"});
-	test_parser('"abc"', {value: "abc"});
-	test_parser("123", {value: 123});
-	test_parser("12.3", {value: 12.3});
+
+test('Constants', function(t) {
+	test_parser(t, "'abc'", {value: "abc"});
+	test_parser(t, '"abc"', {value: "abc"});
+	test_parser(t, "123", {value: 123});
+	test_parser(t, "12.3", {value: 12.3});
 });
 
-test('Variables', function() {
-	test_parser("abc", {name: "abc"});
-	test_parser("a.b[c[0]]", {
+test('Variables', function(t) {
+	test_parser(t, "abc", {name: "abc"});
+	test_parser(t, "a.b[c[0]]", {
 		property: {
 			type: "MemberExpression"
 		}
 	});
 });
 
-test('Function Calls', function() {
-	//test_parser("a(b, c(d,e), f)", {});
-	test_parser("a b + c", {});
-	test_parser(";", {});
+test('Function Calls', function(t) {
+	//test_parser(t, "a(b, c(d,e), f)", {});
+	test_parser(t, "a b + c", {});
+	test_parser(t, ";", {});
 });
 
-test('Arrays', function() {
-	test_parser("[]", {type: 'ArrayExpression', elements: []});
+test('Arrays', function(t) {
+	test_parser(t, "[]", {type: 'ArrayExpression', elements: []});
 
-	test_parser("[a]", {
+	test_parser(t, "[a]", {
 		type: 'ArrayExpression',
 		elements: [{type: 'Identifier', name: 'a'}]
 	});
 });
 
-test('Ops', function() {
-	test_op_expession("1");
-	test_op_expession("1+2");
-	test_op_expession("1*2");
-	test_op_expession("1*(2+3)");
-	test_op_expession("(1+2)*3");
-	test_op_expession("(1+2)*3+4-2-5+2/2*3");
-	test_op_expession("1 + 2-   3*	4 /8");
+test('Ops', function(t) {
+	test_op_expession(t, "1");
+	test_op_expession(t, "1+2");
+	test_op_expession(t, "1*2");
+	test_op_expession(t, "1*(2+3)");
+	test_op_expession(t, "(1+2)*3");
+	test_op_expession(t, "(1+2)*3+4-2-5+2/2*3");
+	test_op_expession(t, "1 + 2-   3*	4 /8");
 });
 
-test('Custom ops', function() {
+test('Custom ops', function(t) {
 	jsep.addBinaryOp("^", 10);
-	test_parser("a^b", {});
+	test_parser(t, "a^b", {});
 });
 
-test('Bad Numbers', function() {
-	test_parser("1.", {type: "Literal", value: 1, raw: "1."});
+test('Bad Numbers', function(t) {
+	test_parser(t, "1.", {type: "Literal", value: 1, raw: "1."});
 	try {
 		var x = jsep("1.2.3");
 		console.log(x);
-		ok(false);
+		t.fail();
 	} catch(e) {
-		ok(true);
+		t.pass();
 	}
 });
 
-test('Esprima Comparison', function() {
-
+test('Esprima Comparison', function(t) {
 	([
 		" true",
 		"false ",
@@ -128,234 +133,232 @@ test('Esprima Comparison', function() {
 		"(Object.variable.toLowerCase()).length == 3",
 		"(Object.variable.toLowerCase())  .  length == 3",
 		"[1] + [2]"
-	]).map(esprima_comparison_test);
+	]).map(esprima_comparison_test(t));
 });
 
-test('Ternary', function() {
+test('Ternary', function(t) {
 	var val = jsep('a ? b : c');
-	equal(val.type, 'ConditionalExpression');
+	t.is(val.type, 'ConditionalExpression');
 	val = jsep('a||b ? c : d');
-	equal(val.type, 'ConditionalExpression');
+	t.is(val.type, 'ConditionalExpression');
 });
 
-test('Named Arguments', function() {
+test('Named Arguments', function(t) {
 	var val = jsep('named(arg1="hi", arg2="bye")');
-	equal(val.type, 'CallExpression');
-	equal(val.callee.type, 'Identifier');
-	equal(val.callee.name, 'named');
-	equal(val.arguments[0].type, 'KeyValueExpression');
-	equal(val.arguments[0].keys.arg1.type, 'Literal');
-	equal(val.arguments[0].keys.arg1.raw, '"hi"');
-	equal(val.arguments[0].keys.arg1.value, 'hi');
-	equal(val.arguments[0].keys.arg2.type, 'Literal');
-	equal(val.arguments[0].keys.arg2.raw, '"bye"');
-	equal(val.arguments[0].keys.arg2.value, 'bye');
+	t.is(val.type, 'CallExpression');
+	t.is(val.callee.type, 'Identifier');
+	t.is(val.callee.name, 'named');
+	t.is(val.arguments[0].type, 'KeyValueExpression');
+	t.is(val.arguments[0].keys.arg1.type, 'Literal');
+	t.is(val.arguments[0].keys.arg1.raw, '"hi"');
+	t.is(val.arguments[0].keys.arg1.value, 'hi');
+	t.is(val.arguments[0].keys.arg2.type, 'Literal');
+	t.is(val.arguments[0].keys.arg2.raw, '"bye"');
+	t.is(val.arguments[0].keys.arg2.value, 'bye');
 
 	var val = jsep('named(arg1="hi" arg2="bye")');
-	equal(val.type, 'CallExpression');
-	equal(val.callee.type, 'Identifier');
-	equal(val.callee.name, 'named');
-	equal(val.arguments[0].type, 'KeyValueExpression');
-	equal(val.arguments[0].keys.arg1.type, 'Literal');
-	equal(val.arguments[0].keys.arg1.raw, '"hi"');
-	equal(val.arguments[0].keys.arg1.value, 'hi');
-	equal(val.arguments[0].keys.arg2.type, 'Literal');
-	equal(val.arguments[0].keys.arg2.raw, '"bye"');
-	equal(val.arguments[0].keys.arg2.value, 'bye');
+	t.is(val.type, 'CallExpression');
+	t.is(val.callee.type, 'Identifier');
+	t.is(val.callee.name, 'named');
+	t.is(val.arguments[0].type, 'KeyValueExpression');
+	t.is(val.arguments[0].keys.arg1.type, 'Literal');
+	t.is(val.arguments[0].keys.arg1.raw, '"hi"');
+	t.is(val.arguments[0].keys.arg1.value, 'hi');
+	t.is(val.arguments[0].keys.arg2.type, 'Literal');
+	t.is(val.arguments[0].keys.arg2.raw, '"bye"');
+	t.is(val.arguments[0].keys.arg2.value, 'bye');
 });
 
-test('Key-Value Expressions', function() {
+test('Key-Value Expressions', function(t) {
 	var val = jsep('named[arg1="hi", arg2="bye"]');
-	equal(val.type, 'MemberExpression')
-	equal(val.computed, true)
-	equal(val.object.name, 'named')
-	equal(val.property.type, 'KeyValueExpression')
-	equal(val.property.keys.arg1.type, 'Literal');
-	equal(val.property.keys.arg1.raw, '"hi"');
-	equal(val.property.keys.arg1.value, 'hi');
-	equal(val.property.keys.arg2.type, 'Literal');
-	equal(val.property.keys.arg2.raw, '"bye"');
-	equal(val.property.keys.arg2.value, 'bye');
+	t.is(val.type, 'MemberExpression')
+	t.is(val.computed, true)
+	t.is(val.object.name, 'named')
+	t.is(val.property.type, 'KeyValueExpression')
+	t.is(val.property.keys.arg1.type, 'Literal');
+	t.is(val.property.keys.arg1.raw, '"hi"');
+	t.is(val.property.keys.arg1.value, 'hi');
+	t.is(val.property.keys.arg2.type, 'Literal');
+	t.is(val.property.keys.arg2.raw, '"bye"');
+	t.is(val.property.keys.arg2.value, 'bye');
 
 	val = jsep('named[arg1="hi" arg2="bye" , arg3=4, arg3=5]');
-	equal(val.type, 'MemberExpression')
-	equal(val.computed, true)
-	equal(val.object.name, 'named')
-	equal(val.property.type, 'KeyValueExpression')
-	equal(val.property.keys.arg1.type, 'Literal');
-	equal(val.property.keys.arg1.raw, '"hi"');
-	equal(val.property.keys.arg1.value, 'hi');
-	equal(val.property.keys.arg2.type, 'Literal');
-	equal(val.property.keys.arg2.raw, '"bye"');
-	equal(val.property.keys.arg2.value, 'bye');
-	equal(val.property.keys.arg3[0].value, 4);
-	equal(val.property.keys.arg3[1].value, 5);
+	t.is(val.type, 'MemberExpression')
+	t.is(val.computed, true)
+	t.is(val.object.name, 'named')
+	t.is(val.property.type, 'KeyValueExpression')
+	t.is(val.property.keys.arg1.type, 'Literal');
+	t.is(val.property.keys.arg1.raw, '"hi"');
+	t.is(val.property.keys.arg1.value, 'hi');
+	t.is(val.property.keys.arg2.type, 'Literal');
+	t.is(val.property.keys.arg2.raw, '"bye"');
+	t.is(val.property.keys.arg2.value, 'bye');
+	t.is(val.property.keys.arg3[0].value, 4);
+	t.is(val.property.keys.arg3[1].value, 5);
 });
 
-test('Special Identifiers', function() {
+test('Special Identifiers', function(t) {
 	jsep.addIdentifierChars('1+%@?:');
 
 	var val = jsep('%wghi:@');
-	equal(val.type, 'Identifier');
-	equal(val.name, '%wghi:@');
+	t.is(val.type, 'Identifier');
+	t.is(val.name, '%wghi:@');
 
 	val = jsep('+%wghi:@');
-	equal(val.type, 'Identifier');
-	equal(val.name, '+%wghi:@');
+	t.is(val.type, 'Identifier');
+	t.is(val.name, '+%wghi:@');
 
 	val = jsep('+ %wghi:@');
-	equal(val.type, 'UnaryExpression');
-	equal(val.argument.name, '%wghi:@');
-	equal(val.argument.type, 'Identifier');
-	equal(val.operator, '+');
-	equal(val.prefix, true)
+	t.is(val.type, 'UnaryExpression');
+	t.is(val.argument.name, '%wghi:@');
+	t.is(val.argument.type, 'Identifier');
+	t.is(val.operator, '+');
+	t.is(val.prefix, true)
 
 	val = jsep('a+%wghi:@');
-	equal(val.type, 'Identifier');
-	equal(val.name, 'a+%wghi:@');
+	t.is(val.type, 'Identifier');
+	t.is(val.name, 'a+%wghi:@');
 
 	val = jsep('a +%wghi:@');
-	equal(val.type, 'BinaryExpression');
-	equal(val.operator, '+');
-	equal(val.left.name, 'a');
-	equal(val.left.type, 'Identifier');
-	equal(val.right.name, '%wghi:@');
-	equal(val.right.type, 'Identifier');
+	t.is(val.type, 'BinaryExpression');
+	t.is(val.operator, '+');
+	t.is(val.left.name, 'a');
+	t.is(val.left.type, 'Identifier');
+	t.is(val.right.name, '%wghi:@');
+	t.is(val.right.type, 'Identifier');
 
 	val = jsep('a + %wghi:@');
-	equal(val.type, 'BinaryExpression');
-	equal(val.operator, '+');
-	equal(val.left.name, 'a');
-	equal(val.left.type, 'Identifier');
-	equal(val.right.name, '%wghi:@');
-	equal(val.right.type, 'Identifier');
+	t.is(val.type, 'BinaryExpression');
+	t.is(val.operator, '+');
+	t.is(val.left.name, 'a');
+	t.is(val.left.type, 'Identifier');
+	t.is(val.right.name, '%wghi:@');
+	t.is(val.right.type, 'Identifier');
 
 	val = jsep('a?1:2');
-	equal(val.type, 'Identifier');
-	equal(val.name, 'a?1:2');
+	t.is(val.type, 'Identifier');
+	t.is(val.name, 'a?1:2');
 
 	val = jsep('a ? 1 : 2');
-	equal(val.type, 'ConditionalExpression')
-	equal(val.test.type, 'Identifier')
-	equal(val.test.name, 'a')
-	equal(val.consequent.value, 1)
-	equal(val.alternate.value, 2)
+	t.is(val.type, 'ConditionalExpression')
+	t.is(val.test.type, 'Identifier')
+	t.is(val.test.name, 'a')
+	t.is(val.consequent.value, 1)
+	t.is(val.alternate.value, 2)
 
 	val = jsep('a ?1:2')
-	equal(val.type, 'ConditionalExpression')
-	equal(val.test.type, 'Identifier')
-	equal(val.test.name, 'a')
-	equal(val.consequent.value, 1)
-	equal(val.alternate.value, 2)
+	t.is(val.type, 'ConditionalExpression')
+	t.is(val.test.type, 'Identifier')
+	t.is(val.test.name, 'a')
+	t.is(val.consequent.value, 1)
+	t.is(val.alternate.value, 2)
 
 	val = jsep('a ?1 :2')
-	equal(val.type, 'ConditionalExpression')
-	equal(val.test.type, 'Identifier')
-	equal(val.test.name, 'a')
-	equal(val.consequent.value, 1)
-	equal(val.alternate.value, 2)
+	t.is(val.type, 'ConditionalExpression')
+	t.is(val.test.type, 'Identifier')
+	t.is(val.test.name, 'a')
+	t.is(val.consequent.value, 1)
+	t.is(val.alternate.value, 2)
 
 	val = jsep('a ?1: 2')
-	equal(val.type, 'ConditionalExpression')
-	equal(val.test.type, 'Identifier')
-	equal(val.test.name, 'a')
-	equal(val.consequent.value, 1)
-	equal(val.alternate.value, 2)
+	t.is(val.type, 'ConditionalExpression')
+	t.is(val.test.type, 'Identifier')
+	t.is(val.test.name, 'a')
+	t.is(val.consequent.value, 1)
+	t.is(val.alternate.value, 2)
 
 	val = jsep('a ? 1:2')
-	equal(val.type, 'ConditionalExpression')
-	equal(val.test.type, 'Identifier')
-	equal(val.test.name, 'a')
-	equal(val.consequent.value, 1)
-	equal(val.alternate.value, 2)
+	t.is(val.type, 'ConditionalExpression')
+	t.is(val.test.type, 'Identifier')
+	t.is(val.test.name, 'a')
+	t.is(val.consequent.value, 1)
+	t.is(val.alternate.value, 2)
 
 	val = jsep('a? 1:2')
-	equal(val.type, 'ConditionalExpression')
-	equal(val.test.type, 'Identifier')
-	equal(val.test.name, 'a')
-	equal(val.consequent.value, 1)
-	equal(val.alternate.value, 2)
+	t.is(val.type, 'ConditionalExpression')
+	t.is(val.test.type, 'Identifier')
+	t.is(val.test.name, 'a')
+	t.is(val.consequent.value, 1)
+	t.is(val.alternate.value, 2)
 
 	val = jsep('a?1 :2')
-	equal(val.type, 'ConditionalExpression')
-	equal(val.test.type, 'Identifier')
-	equal(val.test.name, 'a')
-	equal(val.consequent.value, 1)
-	equal(val.alternate.value, 2)
+	t.is(val.type, 'ConditionalExpression')
+	t.is(val.test.type, 'Identifier')
+	t.is(val.test.name, 'a')
+	t.is(val.consequent.value, 1)
+	t.is(val.alternate.value, 2)
 
 	val = jsep('a?1: 2')
-	equal(val.type, 'ConditionalExpression')
-	equal(val.test.type, 'Identifier')
-	equal(val.test.name, 'a')
-	equal(val.consequent.value, 1)
-	equal(val.alternate.value, 2)
+	t.is(val.type, 'ConditionalExpression')
+	t.is(val.test.type, 'Identifier')
+	t.is(val.test.name, 'a')
+	t.is(val.consequent.value, 1)
+	t.is(val.alternate.value, 2)
 
 	val = jsep('a?1:');
-	equal(val.type, 'Identifier');
-	equal(val.name, 'a?1:');
+	t.is(val.type, 'Identifier');
+	t.is(val.name, 'a?1:');
 
 	val = jsep('1');
-	equal(val.type, 'Literal');
-	equal(val.value, 1);
+	t.is(val.type, 'Literal');
+	t.is(val.value, 1);
 
 	val = jsep('1e2');
-	equal(val.type, 'Literal');
-	equal(val.value, 100);
+	t.is(val.type, 'Literal');
+	t.is(val.value, 100);
 
 	val = jsep('1ebit');
-	equal(val.type, 'Identifier')
-	equal(val.name, '1ebit');
+	t.is(val.type, 'Identifier')
+	t.is(val.name, '1ebit');
 
 	val = jsep('1.1ebit');
-	equal(val.type, 'MemberExpression');
-	equal(val.computed, false);
-	equal(val.object.type, 'Identifier');
-	equal(val.object.name, '1');
-	equal(val.property.type, 'Identifier');
-	equal(val.property.name, '1ebit');
+	t.is(val.type, 'MemberExpression');
+	t.is(val.computed, false);
+	t.is(val.object.type, 'Identifier');
+	t.is(val.object.name, '1');
+	t.is(val.property.type, 'Identifier');
+	t.is(val.property.name, '1ebit');
 
 	val = jsep('1.1');
-	equal(val.type, 'Literal');
-	equal(val.value, 1.1);
+	t.is(val.type, 'Literal');
+	t.is(val.value, 1.1);
 
 	val = jsep('1.1.1');
-	equal(val.type, 'MemberExpression');
-	equal(val.computed, false);
-	equal(val.object.type, 'MemberExpression');
-	equal(val.object.object.name, '1');
-	equal(val.object.property.name, '1');
-	equal(val.property.type, 'Identifier');
-	equal(val.property.name, '1');
+	t.is(val.type, 'MemberExpression');
+	t.is(val.computed, false);
+	t.is(val.object.type, 'MemberExpression');
+	t.is(val.object.object.name, '1');
+	t.is(val.object.property.name, '1');
+	t.is(val.property.type, 'Identifier');
+	t.is(val.property.name, '1');
 
 	val = jsep('1.1e');
-	equal(val.type, 'MemberExpression');
-	equal(val.computed, false);
-	equal(val.object.type, 'Identifier');
-	equal(val.object.name, '1');
-	equal(val.property.type, 'Identifier');
-	equal(val.property.name, '1e');
+	t.is(val.type, 'MemberExpression');
+	t.is(val.computed, false);
+	t.is(val.object.type, 'Identifier');
+	t.is(val.object.name, '1');
+	t.is(val.property.type, 'Identifier');
+	t.is(val.property.name, '1e');
 
 	val = jsep('1.1e1');
-	equal(val.type, 'Literal');
-	equal(val.value, 11);
+	t.is(val.type, 'Literal');
+	t.is(val.value, 11);
 
 	jsep.removeIdentifierChars('1+%@?:');
 
 	val = jsep('Group!prop');
-	equal(val.type, 'Identifier')
-	equal(val.name, 'Group!prop')
-	equal(val.object.type, 'Identifier')
-	equal(val.object.name, 'Group')
-	equal(val.property.type, 'Identifier')
-	equal(val.property.name, 'prop')
+	t.is(val.type, 'Identifier')
+	t.is(val.name, 'Group!prop')
+	t.is(val.object.type, 'Identifier')
+	t.is(val.object.name, 'Group')
+	t.is(val.property.type, 'Identifier')
+	t.is(val.property.name, 'prop')
 
 	val = jsep("'Group 1'!prop");
-	equal(val.type, 'Identifier')
-	equal(val.name, "'Group 1'!prop")
-	equal(val.object.type, 'Identifier')
-	equal(val.object.name, "Group 1")
-	equal(val.property.type, 'Identifier')
-	equal(val.property.name, 'prop')
-});
-
-}());
+	t.is(val.type, 'Identifier')
+	t.is(val.name, "'Group 1'!prop")
+	t.is(val.object.type, 'Identifier')
+	t.is(val.object.name, "Group 1")
+	t.is(val.property.type, 'Identifier')
+	t.is(val.property.name, 'prop')
+})
